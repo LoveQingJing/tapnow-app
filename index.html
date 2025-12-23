@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TapNow 矩阵控制台 V8.6 (UI优化版)</title>
+    <!-- 引入 SheetJS 用于导出 -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- 引入字体 -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <!-- 引入图标 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        /* ================= 1. 视觉系统定义 ================= */
+        :root { 
+            --vp-bg: #050505;               
+            --vp-panel-bg: #0a0a0a;
+            --vp-border: #333;           
+            --vp-accent: #00f3ff;           /* 青色高亮 */
+            --vp-accent-dim: rgba(0, 243, 255, 0.1);
+            --vp-text: #e2e8f0;             
+            --vp-text-dim: #94a3b8;         
+            --vp-success: #10b981;          
+            --vp-error: #f43f5e;            
+            
+            --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+            --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+            
+            --radius: 4px;
+            --header-height: 60px;
+            --sidebar-width: 380px;
+        }
+
+        * { box-sizing: border-box; outline: none; }
+
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--vp-bg);
+            font-family: var(--font-ui);
+            color: var(--vp-text);
+            height: 100vh; width: 100vw;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--vp-accent); }
+        ::-webkit-scrollbar-track { background: #000; }
+
+        /* ================= 2. 布局结构 ================= */
+        
+        /* 顶部导航栏 */
+        #vh-header {
+            height: var(--header-height);
+            width: 100%;
+            background: rgba(10, 10, 10, 0.95);
+            border-bottom: 1px solid var(--vp-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 25px;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .vh-title { 
+            font-weight: 700; font-size: 18px; letter-spacing: 1px; color: var(--vp-accent); 
+            display: flex; align-items: center; gap: 12px; 
+            text-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+        }
+        .vh-dot { width: 8px; height: 8px; background: var(--vp-success); border-radius: 50%; box-shadow: 0 0 8px var(--vp-success); }
+        
+        .vh-actions span { 
+            font-size: 14px; color: var(--vp-text-dim); cursor: pointer; transition: 0.2s; 
+            padding: 8px 16px; border-radius: 4px; border: 1px solid transparent;
+        }
+        .vh-actions span:hover { color: #fff; background: rgba(255,255,255,0.05); border-color: #333; }
+
+        /* 主容器 */
+        #vh-container { display: flex; height: calc(100vh - var(--header-height)); width: 100%; }
+
+        /* 左侧侧边栏 */
+        #vh-sidebar { 
+            width: var(--sidebar-width); min-width: 350px;
+            display: flex; flex-direction: column; 
+            border-right: 1px solid var(--vp-border); 
+            background: #080808;
+            padding: 25px; gap: 25px; overflow-y: auto;
+        }
+
+        .module-title {
+            font-size: 14px; color: var(--vp-accent); margin-bottom: 12px; font-weight: 600; 
+            letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center;
+            border-left: 3px solid var(--vp-accent); padding-left: 10px;
+        }
+
+        .vh-input {
+            background: #121212; border: 1px solid #333; border-radius: var(--radius);
+            color: #fff; padding: 12px 15px; font-size: 14px; width: 100%;
+            transition: all 0.2s; font-family: var(--font-ui); margin-bottom: 10px;
+        }
+        .vh-input:focus { border-color: var(--vp-accent); background: #1a1a1a; }
+        textarea.vh-input { resize: vertical; min-height: 150px; font-family: var(--font-mono); line-height: 1.5; }
+
+        /* 按钮通用 */
+        .vh-btn {
+            width: 100%; background: var(--vp-accent); color: #000;
+            border: none; padding: 12px 0; cursor: pointer; 
+            font-weight: 700; border-radius: var(--radius); 
+            transition: all 0.2s; font-size: 14px;
+            display: flex; justify-content: center; align-items: center; gap: 8px;
+        }
+        .vh-btn:hover:not(:disabled) { box-shadow: 0 0 15px rgba(0, 243, 255, 0.4); filter: brightness(1.1); }
+        .vh-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+        /* [优化] 左侧按钮组容器 */
+        .vh-btn-group {
+            display: grid;
+            grid-template-columns: 3fr 1fr; /* 左边占3份，右边占1份 */
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        /* [优化] 幽灵按钮样式 */
+        .vh-btn-outline {
+            background: transparent; border: 1px solid #444; color: #aaa;
+        }
+        .vh-btn-outline:hover { border-color: var(--vp-accent); color: var(--vp-accent); background: rgba(0, 243, 255, 0.05); }
+        
+        .vh-btn-danger {
+            background: transparent; border: 1px solid #555; color: var(--vp-error);
+        }
+        .vh-btn-danger:hover { border-color: var(--vp-error); background: rgba(244, 63, 94, 0.1); color: #fff; }
+
+        /* 右侧内容区 */
+        #vh-content { flex: 1; background: #000; display: flex; flex-direction: column; position: relative; }
+
+        /* 工具栏 */
+        #vh-toolbar { 
+            height: 60px; border-bottom: 1px solid var(--vp-border); 
+            display: flex; align-items: center; justify-content: space-between; 
+            padding: 0 25px; background: #0e0e0e; flex-shrink: 0; 
+        }
+
+        /* [优化] 表格区域 */
+        .table-wrapper { flex: 1; overflow: auto; position: relative; padding: 0; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 14px; font-family: var(--font-mono); }
+        
+        /* [优化] 表头样式 */
+        thead { 
+            position: sticky; top: 0; 
+            background: #111; /* 深灰背景 */
+            z-index: 10; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            border-bottom: 2px solid var(--vp-accent-dim); /* 底部亮线 */
+        }
+        
+        th { 
+            text-align: left; 
+            padding: 18px 20px; /* 增加高度 */
+            color: var(--vp-accent); /* 青色字体 */
+            font-weight: 700; 
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        td { 
+            padding: 14px 20px; border-bottom: 1px solid #1a1a1a; 
+            color: #d1d5db; vertical-align: middle;
+        }
+        
+        tr:hover { background: rgba(0, 243, 255, 0.03); }
+
+        .hl-num { color: var(--vp-accent); font-weight: bold; font-size: 16px; }
+        .badge { padding: 3px 6px; border-radius: 3px; font-size: 11px; background: #222; color: #888; border: 1px solid #333; }
+        
+        .action-btn { 
+            cursor: pointer; margin-left: 10px; color: #666; transition: 0.2s; font-size: 14px; 
+            padding: 6px 10px; border-radius: 4px; border: 1px solid transparent;
+        }
+        .action-btn:hover { color: #fff; border-color: #444; background: #222; }
+        .action-btn.del:hover { color: var(--vp-error); border-color: var(--vp-error); background: rgba(244,63,94,0.1); }
+
+        /* 底部状态 */
+        .vh-footer {
+            height: 40px; border-top: 1px solid var(--vp-border); background: #0a0a0a;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 25px; font-size: 12px; color: #666;
+        }
+
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .msg-box { font-size: 12px; margin-top: 5px; min-height: 18px; }
+        .text-success { color: var(--vp-success); }
+        .text-error { color: var(--vp-error); }
+
+    </style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<div id="vh-header">
+    <div class="vh-title">
+        <div class="vh-dot"></div>TapNow 矩阵控制台 V8.6
+    </div>
+    <div class="vh-actions">
+        <span onclick="toggleAutoRefresh()" id="autoRefreshBtn"><i class="fas fa-clock"></i> 自动轮询: 关</span>
+        <span onclick="refreshAllAccounts()"><i class="fas fa-sync"></i> 立即刷新全部</span>
+        <span onclick="exportToExcel()" style="color:var(--vp-success); border-color:rgba(16,185,129,0.2)"><i class="fas fa-file-excel"></i> 导出 Excel</span>
+    </div>
+</div>
+
+<div id="vh-container">
+    
+    <!-- 左侧操作栏 -->
+    <div id="vh-sidebar">
+        
+        <!-- 单号接入 -->
+        <div>
+            <div class="module-title">单号接入</div>
+            <input type="text" id="singleAccount" class="vh-input" placeholder="请输入账号 (手机号/邮箱)">
+            <input type="password" id="singlePassword" class="vh-input" placeholder="请输入密码">
+            <button id="btnAdd" class="vh-btn" onclick="addSingleAccount()">
+                <i class="fas fa-plug"></i> 建立连接
+            </button>
+            <div id="singleMsg" class="msg-box"></div>
+        </div>
+
+        <div style="border-top: 1px solid #222; margin: 10px 0;"></div>
+
+        <!-- 批量导入 -->
+        <div style="flex: 1; display: flex; flex-direction: column;">
+            <div class="module-title">
+                <span>批量导入</span>
+                <span id="batchCount" style="color:#555; font-size:12px;">格式: 账号 密码</span>
+            </div>
+            <textarea id="batchInput" class="vh-input" placeholder="支持多种格式粘贴：
+1. 账号 密码 (空格)
+2. 账号|密码
+3. 账号----密码
+4. 账号,密码"></textarea>
+            
+            <!-- [优化] 按钮组布局 -->
+            <div class="vh-btn-group">
+                <button id="btnBatch" class="vh-btn vh-btn-outline" onclick="processBatchImport()">
+                    <i class="fas fa-play"></i> 开始执行导入
+                </button>
+                <button class="vh-btn vh-btn-danger" onclick="clearAllData()">
+                    <i class="fas fa-trash"></i> 清空
+                </button>
+            </div>
+            <div id="batchProgress" class="msg-box" style="color:var(--vp-accent)"></div>
+        </div>
+
+        <!-- 系统设置 -->
+        <div style="background: #0f0f0f; padding: 15px; border-radius: var(--radius); border: 1px solid #222;">
+            <div style="font-size:12px; color:#666; margin-bottom:10px; font-weight:bold;">系统参数配置</div>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-size:14px; color:#ccc;">自动轮询间隔 (秒)</span>
+                <input type="number" id="intervalInput" class="vh-input" value="30" style="width: 80px; text-align: center; margin-bottom:0; height:36px;">
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 右侧数据展示 -->
+    <div id="vh-content">
+        <!-- 顶部工具栏 -->
+        <div id="vh-toolbar">
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <i class="fas fa-search" style="color:#555"></i>
+                <input type="text" id="searchInput" class="vh-input" style="width: 300px; padding: 8px 12px; margin-bottom:0;" placeholder="搜索账号、ID、邀请码..." oninput="renderTable()">
+                
+                <select id="sortOp" class="vh-input" style="width: 160px; padding: 8px 12px; margin-bottom:0;" onchange="renderTable()">
+                    <option value="desc">↓ 积分从高到低</option>
+                    <option value="asc">↑ 积分从低到高</option>
+                </select>
+            </div>
+            
+            <div style="font-family: var(--font-mono); font-size: 14px;">
+                积分池总计: <span id="totalPoints" style="color:var(--vp-accent); font-size:20px; font-weight:bold;">0</span>
+            </div>
+        </div>
+
+        <!-- [优化] 表格区域 -->
+        <div class="table-wrapper">
+            <table id="accountTable">
+                <thead>
+                    <tr>
+                        <th width="60" style="text-align:center;">#</th>
+                        <th>账号 / 组织ID (OrgID)</th>
+                        <th>类型</th>
+                        <th>邀请码</th>
+                        <th>当前积分</th>
+                        <th>最后同步时间</th>
+                        <th style="text-align:right; padding-right:30px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- JS 渲染内容 -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 底部状态 -->
+        <div class="vh-footer">
+            <div>当前节点数: <span id="totalCount" style="color:#fff; font-weight:bold;">0</span></div>
+            <div>系统状态: <span style="color:var(--vp-success)">● 运行正常</span></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // ================= 核心逻辑 (保持 V8.5 功能) =================
+    const API_LOGIN = "https://app.tapnow.ai/api/public/v1/auth/login";
+    const API_WALLET_BASE = "https://app.tapnow.ai/api/billing/v1/billing/wallet/";
+    const STORAGE_KEY = "tapnow_matrix_v8_6_cn";
+
+    let accountsData = []; 
+    let autoRefreshTimer = null;
+    let isAutoRefreshing = false;
+
+    window.onload = function() {
+        loadData();
+        renderTable();
+    };
+
+    function loadData() {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            try { accountsData = JSON.parse(stored); } catch(e) { accountsData = []; }
+        }
+    }
+
+    function saveData() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(accountsData));
+        renderTable();
+    }
+
+    function clearAllData() {
+        if(confirm("警告：确定要清空所有本地存储的账号数据吗？此操作无法撤销。")) {
+            accountsData = [];
+            saveData();
+            stopAutoRefresh();
+        }
+    }
+
+    // --- API 交互逻辑 ---
+    async function fullLogin(account, password) {
+        let payload = {};
+        const isEmail = account.includes('@');
+        
+        if (isEmail) {
+            payload = { "email": account, "password": password };
+        } else {
+            let phone = account.replace(/^\+86/, '').trim();
+            payload = { "phone_region": "+86", "phone_number": phone, "password": password, "email": "" };
+        }
+
+        const res = await fetch(API_LOGIN, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const json = await res.json();
+        if (!res.ok || json.code !== 0) throw new Error(json.msg || "登录失败");
+
+        const info = json.data.user_info;
+        const token = json.data.token.access_token;
+        const points = await fetchPoints(token, info.org_id);
+
+        return {
+            id: info.user_id,
+            account: isEmail ? info.email : info.phone_number,
+            password: password,
+            token: token,
+            type: isEmail ? '邮箱' : '手机',
+            inviteCode: info.invite_code,
+            orgId: info.org_id,
+            points: points,
+            lastUpdate: new Date().toLocaleTimeString(),
+            status: 'active'
+        };
+    }
+
+    async function fetchPoints(token, orgId) {
+        const res = await fetch(`${API_WALLET_BASE}${orgId}`, {
+            method: 'GET', headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.status === 401) throw new Error("TOKEN_EXPIRED");
+        if (!res.ok) throw new Error("API Error");
+        const json = await res.json();
+        return json.data.available_balance;
+    }
+
+    async function smartRefresh(item) {
+        if (!item.token || !item.orgId) {
+            return await fullLogin(item.account, item.password);
+        }
+        try {
+            const points = await fetchPoints(item.token, item.orgId);
+            return { ...item, points: points, lastUpdate: new Date().toLocaleTimeString() };
+        } catch (error) {
+            if (error.message === "TOKEN_EXPIRED") {
+                console.log(`[${item.account}] Token过期，自动重连...`);
+                return await fullLogin(item.account, item.password);
+            }
+            throw error;
+        }
+    }
+
+    // --- 界面操作 ---
+    async function addSingleAccount() {
+        const acc = document.getElementById('singleAccount').value.trim();
+        const pass = document.getElementById('singlePassword').value.trim();
+        const msg = document.getElementById('singleMsg');
+        const btn = document.getElementById('btnAdd');
+
+        if(!acc || !pass) return showMsg(msg, "请输入账号和密码", false);
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-circle-notch spin"></i> 连接中...';
+        showMsg(msg, "");
+
+        try {
+            const result = await fullLogin(acc, pass);
+            upsertAccount(result);
+            showMsg(msg, "接入成功", true);
+            document.getElementById('singleAccount').value = "";
+            document.getElementById('singlePassword').value = "";
+        } catch (e) {
+            showMsg(msg, "错误: " + e.message, false);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-plug"></i> 建立连接';
+        }
+    }
+
+    async function processBatchImport() {
+        const text = document.getElementById('batchInput').value.trim();
+        if(!text) return;
+        
+        const lines = text.split('\n');
+        const btn = document.getElementById('btnBatch');
+        const prog = document.getElementById('batchProgress');
+
+        btn.disabled = true;
+        let successCount = 0;
+        
+        for(let line of lines) {
+            line = line.trim();
+            if(!line) continue;
+            let parts = line.split(/[\s,]+|\||----/);
+            parts = parts.filter(p => p && p.trim() !== "");
+
+            if(parts.length >= 2) {
+                const acc = parts[0].trim();
+                const pass = parts[1].trim();
+                prog.innerText = `正在处理: ${acc}`;
+                try {
+                    const result = await fullLogin(acc, pass);
+                    upsertAccount(result);
+                    successCount++;
+                } catch(e) { console.error(e); }
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+        
+        prog.innerText = `导入完成，成功接入: ${successCount}`;
+        btn.disabled = false;
+        document.getElementById('batchInput').value = '';
+    }
+
+    function upsertAccount(newAccount) {
+        const idx = accountsData.findIndex(a => a.account === newAccount.account);
+        if(idx > -1) accountsData[idx] = newAccount;
+        else accountsData.push(newAccount);
+        saveData();
+    }
+
+    async function refreshAllAccounts() {
+        const btn = document.querySelectorAll('.vh-actions span')[1];
+        const oldText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spin fa-sync"></i> 刷新中...';
+        btn.style.color = "var(--vp-accent)";
+
+        for (let i = 0; i < accountsData.length; i++) {
+            const acc = accountsData[i];
+            const icon = document.getElementById(`icon-${acc.id}`);
+            if(icon) icon.className = "fas fa-sync spin";
+
+            try {
+                const updated = await smartRefresh(acc);
+                accountsData[i] = updated;
+                const ptEl = document.getElementById(`pts-${acc.id}`);
+                if(ptEl) ptEl.innerText = updated.points;
+            } catch (e) { console.error(e); }
+            
+            if(icon) icon.className = "fas fa-sync";
+        }
+        saveData();
+        btn.innerHTML = oldText;
+        btn.style.color = "";
+        renderTable();
+    }
+
+    function toggleAutoRefresh() {
+        const btn = document.getElementById('autoRefreshBtn');
+        const input = document.getElementById('intervalInput');
+        
+        if (isAutoRefreshing) {
+            clearInterval(autoRefreshTimer);
+            isAutoRefreshing = false;
+            btn.innerHTML = '<i class="fas fa-clock"></i> 自动轮询: 关';
+            btn.style.color = "";
+            input.disabled = false;
+        } else {
+            let seconds = parseInt(input.value);
+            if(isNaN(seconds) || seconds < 5) seconds = 5;
+            isAutoRefreshing = true;
+            input.disabled = true;
+            
+            btn.innerHTML = `<i class="fas fa-clock"></i> 自动轮询: 开 (${seconds}s)`;
+            btn.style.color = "var(--vp-success)";
+            refreshAllAccounts();
+            autoRefreshTimer = setInterval(refreshAllAccounts, seconds * 1000);
+        }
+    }
+
+    function refreshOne(id) {
+        const item = accountsData.find(a => a.id === id);
+        if(!item) return;
+        const icon = document.getElementById(`icon-${id}`);
+        if(icon) icon.className = "fas fa-sync spin";
+
+        smartRefresh(item).then(res => {
+            const idx = accountsData.findIndex(a => a.id === id);
+            if(idx > -1) accountsData[idx] = res;
+            saveData();
+            if(icon) icon.className = "fas fa-sync";
+        });
+    }
+
+    function deleteOne(id) {
+        if(confirm("确定移除此账号？")) {
+            accountsData = accountsData.filter(a => a.id !== id);
+            saveData();
+        }
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        const sortMode = document.getElementById('sortOp').value;
+
+        let filtered = accountsData.filter(a => 
+            a.account.toLowerCase().includes(search) || 
+            (a.inviteCode && a.inviteCode.toLowerCase().includes(search)) ||
+            (a.orgId && a.orgId.includes(search))
+        );
+
+        filtered.sort((a, b) => sortMode === 'asc' ? a.points - b.points : b.points - a.points);
+
+        const totalP = filtered.reduce((acc, cur) => acc + (cur.points || 0), 0);
+        document.getElementById('totalCount').innerText = filtered.length;
+        document.getElementById('totalPoints').innerText = totalP.toLocaleString();
+
+        tbody.innerHTML = filtered.map((item, index) => `
+            <tr>
+                <td style="color: #444; text-align:center;">${index + 1}</td>
+                <td>
+                    <div style="font-weight:bold; color:#fff; font-size:15px;">${item.account}</div>
+                    <div style="font-size:12px; color:#555; margin-top:4px; font-family:monospace;">${item.orgId}</div>
+                </td>
+                <td style="color:#888;">${item.type}</td>
+                <td><span class="badge">${item.inviteCode || '-'}</span></td>
+                <td><span class="hl-num" id="pts-${item.id}">${item.points}</span></td>
+                <td style="font-size:12px; color:#555;">${item.lastUpdate}</td>
+                <td style="text-align:right; padding-right:30px;">
+                    <button class="action-btn" onclick="refreshOne('${item.id}')" title="刷新">
+                        <i id="icon-${item.id}" class="fas fa-sync"></i>
+                    </button>
+                    <button class="action-btn del" onclick="deleteOne('${item.id}')" title="删除">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function showMsg(el, text, isSuccess) {
+        el.innerText = text;
+        el.className = 'msg-box ' + (isSuccess ? 'text-success' : 'text-error');
+    }
+
+    function exportToExcel() {
+        if(accountsData.length === 0) return alert("暂无数据可导出");
+        const ws = XLSX.utils.json_to_sheet(accountsData.map(a => ({
+            账号: a.account, 积分: a.points, 类型: a.type,
+            OrgID: a.orgId, 邀请码: a.inviteCode, 更新时间: a.lastUpdate
+        })));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Matrix_Data");
+        XLSX.writeFile(wb, `TapNow_Matrix_${Date.now()}.xlsx`);
+    }
+
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "tapnow-matrix",
+  "version": "8.6.0",
+  "description": "TapNow 矩阵控制台",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.tapnow.matrix",
+    "productName": "TapNow矩阵控制台",
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}
